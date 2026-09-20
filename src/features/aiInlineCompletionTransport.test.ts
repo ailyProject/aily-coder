@@ -6,11 +6,9 @@ import {
   DEEPSEEK_FIM_HOLE,
   InlineCompletionHttpError,
   fetchLmStudioFimInlineCompletion,
-  fetchZhipuChatInlineCompletion,
   normalizeLmStudioFimBaseUrl,
   parseRetryAfterMs,
-  resetInlineCompletionRateLimitsForTests,
-  resolveInlineCompletionProvider
+  resetInlineCompletionRateLimitsForTests
 } from './aiInlineCompletionTransport'
 
 const originalFetch = globalThis.fetch
@@ -33,22 +31,6 @@ const baseRequest = {
   rateLimitCooldownMs: 1_000
 }
 
-test('auto provider distinguishes BigModel from LM Studio/OpenAI-compatible FIM', () => {
-  assert.equal(
-    resolveInlineCompletionProvider('https://open.bigmodel.cn/api/paas/v4'),
-    'zhipu-chat'
-  )
-  assert.equal(
-    resolveInlineCompletionProvider('https://open.bigmodel.cn/api/coding/paas/v4'),
-    'zhipu-chat'
-  )
-  assert.equal(resolveInlineCompletionProvider('http://127.0.0.1:1234/api/v1'), 'lmstudio-fim')
-  assert.equal(
-    resolveInlineCompletionProvider('https://open.bigmodel.cn/api/paas/v4', 'lmstudio-fim'),
-    'lmstudio-fim'
-  )
-})
-
 test('normalizes LM Studio native v1 URLs to the OpenAI-compatible FIM base', () => {
   assert.equal(normalizeLmStudioFimBaseUrl('http://127.0.0.1:1234'), 'http://127.0.0.1:1234/v1')
   assert.equal(
@@ -67,7 +49,7 @@ test('LM Studio adapter posts a DeepSeek FIM completion request', async () => {
   globalThis.fetch = async (input, init) => {
     requestedUrl = String(input)
     requestedBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-    return new Response(JSON.stringify({ choices: [{ text: '  a + b\n\nignored' }] }), {
+    return new Response(JSON.stringify({ choices: [{ text: '  a + b\n' }] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     })
@@ -85,34 +67,7 @@ test('LM Studio adapter posts a DeepSeek FIM completion request', async () => {
     DEEPSEEK_FIM_HOLE,
     DEEPSEEK_FIM_END
   ])
-  assert.equal(completion, 'a + b')
-})
-
-test('Zhipu adapter uses chat completions with thinking and sampling disabled', async () => {
-  let requestedUrl = ''
-  let requestedBody: Record<string, unknown> = {}
-  globalThis.fetch = async (input, init) => {
-    requestedUrl = String(input)
-    requestedBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-    return new Response(
-      JSON.stringify({ choices: [{ message: { content: '```ts\na + b\n```' } }] }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    )
-  }
-
-  const completion = await fetchZhipuChatInlineCompletion({
-    ...baseRequest,
-    apiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-4.7-flash'
-  })
-
-  assert.equal(requestedUrl, 'https://open.bigmodel.cn/api/paas/v4/chat/completions')
-  assert.equal(requestedBody.model, 'glm-4.7-flash')
-  assert.deepEqual(requestedBody.thinking, { type: 'disabled' })
-  assert.equal(requestedBody.do_sample, false)
-  assert.equal(requestedBody.stream, false)
-  assert.deepEqual(requestedBody.messages, [{ role: 'user', content: baseRequest.prompt }])
-  assert.equal(completion, 'a + b')
+  assert.equal(completion, '  a + b\n')
 })
 
 test('request timeout aborts a stalled completion', async () => {
@@ -127,9 +82,9 @@ test('request timeout aborts a stalled completion', async () => {
     })
 
   await assert.rejects(
-    fetchZhipuChatInlineCompletion({
+    fetchLmStudioFimInlineCompletion({
       ...baseRequest,
-      apiBaseUrl: 'https://timeout.example/v4',
+      apiBaseUrl: 'https://timeout.example/v1',
       timeoutMs: 15
     }),
     { name: 'InlineCompletionTimeoutError' }
@@ -143,7 +98,7 @@ test('429 blocks the same origin for the configured cooldown', async () => {
     if (requestCount === 1) {
       return new Response(JSON.stringify({ error: { message: 'limited' } }), { status: 429 })
     }
-    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+    return new Response(JSON.stringify({ choices: [{ text: 'ok' }] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     })
@@ -151,13 +106,13 @@ test('429 blocks the same origin for the configured cooldown', async () => {
 
   const request = {
     ...baseRequest,
-    apiBaseUrl: 'https://limited.example/v4',
+    apiBaseUrl: 'https://limited.example/v1',
     rateLimitCooldownMs: 25
   }
-  await assert.rejects(fetchZhipuChatInlineCompletion(request), InlineCompletionHttpError)
+  await assert.rejects(fetchLmStudioFimInlineCompletion(request), InlineCompletionHttpError)
 
   const startedAt = Date.now()
-  assert.equal(await fetchZhipuChatInlineCompletion(request), 'ok')
+  assert.equal(await fetchLmStudioFimInlineCompletion(request), 'ok')
   assert.ok(Date.now() - startedAt >= 15)
   assert.equal(requestCount, 2)
 })

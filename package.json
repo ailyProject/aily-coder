@@ -71,7 +71,7 @@
     "test:package-runtime": "npm run build:runtime && node --test scripts/package-runtime.test.mjs",
     "test:component-libraries": "node --test server/componentLibraryService.test.js server/agentRpcRouter.test.js server/agentRpcServer.test.js",
     "test:aily-view-library": "tsx --test src/features/ailyLibraryProjection.test.ts",
-    "test:inline-completion": "tsx --test src/features/aiInlineCompletionTransport.test.ts",
+    "test:inline-completion": "tsx --test src/features/aiInlineCompletionTransport.test.ts src/features/aiInlineCompletionCloudTransport.test.ts",
     "prepack": "npm run build:subapp",
     "start:debugServer": "tsx src/debugServer.ts",
     "lsp-proxy": "tsx server/lspWsProxy.ts"
